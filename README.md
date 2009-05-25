@@ -19,7 +19,7 @@ And then wait for another job.
 
 To disconnect from the server, just close the socket. No special messaging required.
 
-Each socket connection is only allowed to process a single type of job. If you want you can resent a {"type": "join", ...} message to recast the type of jobs the client wants to consume.
+Each socket connection is only allowed to process a single type of job. If you want you can resend a {"type": "join", ...} message to recast the type of jobs the client wants to consume.
 
 Master
 ------
