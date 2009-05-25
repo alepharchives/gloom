@@ -37,7 +37,6 @@ if int(sys.argv[1]) == 9999:
         if "error" not in job:
             send(sock, {
                 "type": "response",
-                "id": job["id"],
                 "body": {"foo": job}
             })
 else:
