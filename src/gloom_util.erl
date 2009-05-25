@@ -3,7 +3,7 @@
 % This file is part of Gloom, which is released under the MIT license.
 -module(gloom_util).
 
--export([add_slave/2, rem_slave/1, respond/2, add_job/5]).
+-export([add_slave/2, rem_slave/1, respond/2, add_job/5, rem_jobs/1]).
 
 -record(slave, {pid, type, status, job}).
 -record(job, {id, pid, type, status, priority, time, retries, body}).
@@ -17,7 +17,7 @@ add_slave(Pid, Type) ->
 rem_slave(Pid) ->
     case ets:lookup(slaves, Pid) of
         [] ->
-            io:format("ERROR: Unknown slave pid: ~p~n", [Pid]);
+            ok;
         [{_, Slave}] ->
             case Slave of
                 #slave{status=busy, job=JobId} ->
@@ -27,9 +27,12 @@ rem_slave(Pid) ->
                         priority=Job#job.priority+1,
                         retries=Job#job.retries-1
                     },
-                    io:format("New job: ~p~n", [NewJob]),
-                    case NewJob#job.retries < 0 of
-                        true ->
+                    case {NewJob#job.pid, NewJob#job.retries} of
+                        {nil, _} ->
+                            % Master disconnected, drop the response
+                            true = ets:delete(jobs, NewJob#job.id),
+                            ok;
+                        {_, Retries} when Retries < 0 ->
                             Error = {job_failed, NewJob#job.id},
                             true = ets:delete(jobs, NewJob#job.id),
                             gen_server:cast(NewJob#job.pid, {error, Error});
@@ -47,15 +50,21 @@ rem_slave(Pid) ->
 respond(Pid, Body) ->
     case ets:lookup(slaves, Pid) of
         [] ->
-            io:error("Invalid slave pid: ~p~n", [Pid]),
             gen_server:cast(Pid, {error, {internal_error, unknown_slave}});
         [{_, Slave}] ->
             [{_, Job}] = ets:lookup(jobs, Slave#slave.job),
-            Resp = {[{id, Job#job.id}, {body, Body}]},
-            ok = gen_server:cast(Job#job.pid, {response, Resp}),
-            true = ets:delete(jobs, Job#job.id),
-            NewSlave = Slave#slave{status=idle, job=nil},
-            true = ets:insert(slaves, {Slave#slave.pid, NewSlave}),
+            case Job#job.pid of
+                nil ->
+                    % This master closed the socket before a job
+                    % completed. Send the response to /dev/null
+                    ok;
+                _ ->
+                    Resp = {[{id, Job#job.id}, {body, Body}]},
+                    ok = gen_server:cast(Job#job.pid, {response, Resp}),
+                    true = ets:delete(jobs, Job#job.id),
+                    NewSlave = Slave#slave{status=idle, job=nil},
+                    true = ets:insert(slaves, {Slave#slave.pid, NewSlave})
+            end,
             ok = check_job_state()
     end,
     ok.
@@ -75,18 +84,29 @@ add_job(Pid, Id, Type, Priority, Body) ->
         retries=3,
         body=Body
     },
-    io:format("Adding job: ~p~n", [Job]),
     true = ets:insert(jobs, {Id, Job}),
-    io:format("Job Table: ~p~n", [ets:info(jobs)]),
     ok = check_job_state().
-    
+
+rem_jobs(Pid) ->
+    Pattern = #job{
+        id='$1', pid=Pid, type='_', status=queued,
+        priority='_', time='_', retries='_', body='_'
+    },
+    lists:foreach(fun([Id]) ->
+        true = ets:delete(jobs, Id)
+    end, ets:match(jobs, {'_', Pattern})),
+    Pattern2 = Pattern#job{status='_'},
+    lists:foreach(fun([Id]) ->
+        [{Id, Job}] = ets:lookup(jobs, Id),
+        true = ets:insert(jobs, {Id, Job#job{pid=nil}})
+    end, ets:match(jobs, {'_', Pattern2})).
+
 check_job_state() ->
-    io:format("Idle: ~p~n", [idle_slaves()]),
-    io:format("Jobs: ~p~n", [ets:match(jobs, '$1')]),
+    %gloom:info({slaves, ets:tab2list(slaves)}),
+    %gloom:info({jobs, ets:tab2list(jobs)}),
     lists:foreach(fun([Pid, Type]) ->
         case find_job(Type) of
             nil ->
-                io:format("No job found.~n", []),
                 ok;
             Job when is_record(Job, job) ->
                 [{_, Slave}] = ets:lookup(slaves, Pid),
@@ -94,7 +114,7 @@ check_job_state() ->
                 true = ets:insert(slaves, NewRow),
                 true = ets:insert(jobs, {Job#job.id, Job#job{status=running}}),
                 gen_server:cast(
-                    Slave#slave.pid, {job, Job#job.id, Job#job.body}
+                    Slave#slave.pid, {job, Job#job.id, Type, Job#job.body}
                 )
         end
     end, idle_slaves()).
@@ -114,13 +134,10 @@ find_job(Type) ->
 find_job(Type, Continue, Acc) ->
     case queued_jobs(Type, Continue) of
         '$end_of_table' ->
-            io:format("No queued jobs.~n", []),
             Acc;
         {Matches, Continue2} ->
-            io:format("Hello? ~p~n", [Matches]),
             Found = lists:foldl(
                 fun([Id, NewPr, NewTm], {{CurrPr, CurrTm}, _}=Curr) ->
-                    io:format("~p, ~p, ~p~n", [Id, NewPr, NewTm]),
                     case NewPr >= CurrPr andalso NewTm < CurrTm of
                         true ->
                             [{_, NewJob}] = ets:lookup(jobs, Id),
@@ -135,16 +152,9 @@ find_job(Type, Continue, Acc) ->
 
 queued_jobs(Type, nil) ->
     Pattern = #job{
-        id='$1',
-        pid='_',
-        type=Type,
-        status=queued,
-        priority='$2',
-        time='$3',
-        retries='_',
-        body='_'
+        id='$1', pid='_', type=Type, status=queued,
+        priority='$2', time='$3', retries='_', body='_'
     },
-    io:format("Job pattern: ~p~n", [{'_', Pattern}]),
     ets:match(jobs, {'_', Pattern}, 50);
 queued_jobs(_Type, Continue) ->
     ets:match(Continue).

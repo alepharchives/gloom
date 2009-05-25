@@ -35,8 +35,6 @@ send(Socket, Data) ->
     Packet = <<Length:32/integer, Json/binary>>,
     gen_tcp:send(Socket, Packet).
 
-send_error(Socket, {missing_field, Field}) ->
-    send(Socket, {[{error, missing_field}, {name, Field}]});
 send_error(Socket, {Error, Reason}) ->
     send(Socket, {[{error, Error}, {reason, Reason}]}).
 

@@ -14,8 +14,7 @@ init(State) ->
 terminate(_Reason, {_Stream, Client}) ->
     gen_tcp:close(Client).
 
-handle_call(Msg, _From, State) ->
-    io:format("Slave call: ~p~n", [Msg]),
+handle_call(_Msg, _From, State) ->
     {reply, ok, State}.
 
 handle_cast({tcp, Json}, {_, Socket}=State) ->
@@ -25,10 +24,11 @@ handle_cast({tcp, Json}, {_, Socket}=State) ->
             gloom_server:send_error(Socket, Error)
     end,
     {noreply, State};
-handle_cast({job, Id, Body}, {_, Socket}=State) ->
+handle_cast({job, Id, Type, Body}, {_, Socket}=State) ->
     Job = {[
-        {<<"type">>, <<"job">>},
+        {<<"action">>, <<"job">>},
         {<<"id">>, Id},
+        {<<"type">>, Type},
         {<<"body">>, Body}
     ]},
     gloom_server:send(Socket, Job),
@@ -38,19 +38,17 @@ handle_cast({error, Error}, {_, Socket}=State) ->
     {stop, normal, State};
 handle_cast(socket_closed, State) ->
     {stop, normal, State};
-handle_cast(Info, State) ->
-    io:format("Slave cast: ~p~n", [Info]),
+handle_cast(_Msg, State) ->
     {noreply, State}.
 
-handle_info(Info, State) ->
-    io:format("Slave info: ~p~n", [Info]),
+handle_info(_Msg, State) ->
     {noreply, State}.
 
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 handle_request({Fields}) ->
-    case proplists:get_value(<<"type">>, Fields) of
+    case proplists:get_value(<<"action">>, Fields) of
         undefined ->
             throw({missing_field, type});
         Type ->
@@ -58,13 +56,13 @@ handle_request({Fields}) ->
     end.
 
 handle_request(<<"join">>, Fields) ->
-    case proplists:get_value(<<"job_type">>, Fields) of
+    case proplists:get_value(<<"type">>, Fields) of
         undefined ->
             throw({missing_field, job_type});
         JobType ->
             gloom:add_slave(JobType)
     end;
-handle_request(<<"response">>, Fields) ->
+handle_request(<<"respond">>, Fields) ->
     case proplists:get_value(<<"body">>, Fields) of
         undefined ->
             throw({missing_field, body});
