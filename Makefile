@@ -30,7 +30,7 @@ OBJECTS = \
 all: build
 
 prepare:
-	mkdir -p $(EBIN)
+	@if [ ! -d $(EBIN) ] ; then mkdir -p $(EBIN) ; fi
 
 build: prepare $(OBJECTS)
 
