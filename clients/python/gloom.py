@@ -2,6 +2,7 @@
 
 import socket
 import struct
+import uuid
 
 try:
     import json
@@ -38,10 +39,12 @@ class Connection(object):
     def disconnect(self):
         self.sock.close()
 
-    def send(self, data, check_error=True):
-        packet = json.dumps(data)
-        packet = ''.join([struct.pack("!i", len(packet)), packet])
+    def write(self, data):
+        packet = ''.join([struct.pack("!i", len(data)), data])
         self.sock.sendall(packet)
+
+    def send(self, data):
+        self.write(json.dumps(data))
 
     def read(self, timeout=None):
         self.sock.settimeout(timeout)
@@ -70,6 +73,10 @@ class Slave(Connection):
 
     def join(self, type):
         self.send({"action": "join", "type": type})
+        ret = self.read()
+        if "ok" not in ret or ret["ok"] != True:
+            raise ProtocolError("Unexpected response: %r" % ret)
+        return True
 
     def job(self, timeout=None):
         ret = self.read(timeout=timeout)
@@ -79,7 +86,11 @@ class Slave(Connection):
         return Job(ret)
 
     def respond(self, body=None):
-        self.send({"action": "respond", "body": body}) 
+        self.send({"action": "respond", "body": body})
+        ret = self.read()
+        if "ok" not in ret or ret ["ok"] != True:
+            raise ProtocolError("Unexpected response: %r" % ret)
+        return True
 
 class Master(Connection):
     def __init__(self, ip="127.0.0.1", port=9998):
@@ -90,7 +101,10 @@ class Master(Connection):
 
     def submit(self, id=None, type=None, body=None):
         if id is None: id = self.new_job_id()
-        self.send({"action": "job", "id": id, "type": type, "body": body})
+        self.send({"action": "submit", "id": id, "type": type, "body": body})
+        ret = self.read()
+        if "ok" not in ret or ret["ok"] != True:
+            raise ProtocolError("Unexpected response: %r" % ret)
         return id
 
     def receive(self, timeout=None):

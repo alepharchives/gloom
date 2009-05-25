@@ -21,9 +21,9 @@ handle_call(_Msg, _From, State) ->
 
 handle_cast({tcp, Json}, {_, Socket}=State) ->
     case (catch handle_request(Json)) of
-        ok -> ok;
+        ok ->
+            gloom_server:send(Socket, {[{<<"ok">>, true}]});
         Error ->
-            gloom:error({error_adding_job, Error}),
             gloom_server:send_error(Socket, Error)
     end,
     {noreply, State};
@@ -51,7 +51,7 @@ handle_request(Json) ->
         Type -> handle_request(Type, Fields)
     end.
 
-handle_request(<<"job">>, Fields) ->
+handle_request(<<"submit">>, Fields) ->
     JobId = case proplists:get_value(<<"id">>, Fields) of
         undefined -> throw({missing_field, id});
         JobIdVal -> JobIdVal
@@ -70,7 +70,9 @@ handle_request(<<"job">>, Fields) ->
         BodyVal -> BodyVal
     end,
     ok = gloom:add_job(JobId, Type, Priority, Body);
+handle_request(<<"join">>, _Fields) ->
+    throw({invalid_action, not_a_slave});
+handle_request(<<"respond">>, _Fields) ->
+    throw({invalid_action, not_a_slave});
 handle_request(Type, _Fields) ->
-    throw({unknown_type, Type}).
-
-            
+    throw({unknown_action, Type}).

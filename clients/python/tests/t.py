@@ -5,12 +5,26 @@
 import unittest
 import gloom
 
+from gloom import GloomError, TransportError, ProtocolError, ServerError
+
 class test(object):
     def __call__(self, func):
         def run():
             func(*self.args())
         run.func_name = func.func_name
         return run
+    def args(self):
+        raise NotImplemented
+
+class master(test):
+    def args(self):
+        return (gloom.Master(),)
+
+class slave(test):
+    def args(self):
+        return (gloom.Slave(),)
+
+class both(test):
     def args(self):
         return (gloom.Master(), gloom.Slave())
 

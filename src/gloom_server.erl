@@ -17,6 +17,12 @@
     clients=[]
 }).
 
+% Max job size of 256 MiB. Though remember
+% that all communication is buffered so if
+% you really need sizes this big it'd
+% probably be best to use OOB transfers.
+-define(MAX_BODY_SIZE, 268435456).
+
 -define(POOL, 2).
 -define(PORT_OPTS, [
     binary,
@@ -91,14 +97,26 @@ listen(#state{mod=Module, socket=Socket}) ->
 stream(Parent, Socket) ->
     case gen_tcp:recv(Socket, 4) of
         {ok, <<Length:32/integer>>} ->
-            case gen_tcp:recv(Socket, Length) of
-                {ok, Json} ->
-                    gen_server:cast(Parent, {tcp, mochijson2:decode(Json)}),
-                    stream(Parent, Socket);
-                {error, closed} ->
-                    ok;
-                {error, RecvError} ->
-                    exit({error, receive_error, RecvError})
+            case Length > ?MAX_BODY_SIZE of
+                true ->
+                    send_error(Socket, {size_error, <<"length too large">>}),
+                    gen_tcp:close(Socket);
+                _ ->
+                    case gen_tcp:recv(Socket, Length) of
+                        {ok, Json} ->
+                            case (catch mochijson2:decode(Json)) of
+                                {invalid_json, Reason} ->
+                                    send_error(Socket, {invalid_json, Reason}),
+                                    gen_tcp:close(Socket);
+                                Msg ->
+                                    gen_server:cast(Parent, {tcp, Msg}),
+                                    stream(Parent, Socket)
+                            end;
+                        {error, closed} ->
+                            ok;
+                        {error, RecvError} ->
+                            exit({error, receive_error, RecvError})
+                    end
             end;
         {error, closed} ->
             gen_server:cast(Parent, socket_closed),

@@ -52,18 +52,23 @@ respond(Pid, Body) ->
         [] ->
             gen_server:cast(Pid, {error, {internal_error, unknown_slave}});
         [{_, Slave}] ->
-            [{_, Job}] = ets:lookup(jobs, Slave#slave.job),
-            case Job#job.pid of
+            case Slave#slave.job of
                 nil ->
-                    % This master closed the socket before a job
-                    % completed. Send the response to /dev/null
-                    ok;
-                _ ->
-                    Resp = {[{id, Job#job.id}, {body, Body}]},
-                    ok = gen_server:cast(Job#job.pid, {response, Resp}),
-                    true = ets:delete(jobs, Job#job.id),
-                    NewSlave = Slave#slave{status=idle, job=nil},
-                    true = ets:insert(slaves, {Slave#slave.pid, NewSlave})
+                    gen_server:cast(Pid, {error, {invalid_state, no_job}});
+                JobId ->
+                    [{_, Job}] = ets:lookup(jobs, JobId),
+                    case Job#job.pid of
+                        nil ->
+                            % This master closed the socket before a job
+                            % completed. Send the response to /dev/null
+                            ok;
+                        _ ->
+                            Resp = {[{id, Job#job.id}, {body, Body}]},
+                            ok = gen_server:cast(Job#job.pid, {response, Resp}),
+                            true = ets:delete(jobs, Job#job.id),
+                            NewSlave = Slave#slave{status=idle, job=nil},
+                            true = ets:insert(slaves, {Pid, NewSlave})
+                    end
             end,
             ok = check_job_state()
     end,

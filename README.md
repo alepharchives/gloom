@@ -1,36 +1,78 @@
 Gloom: Job Distribution Daemon
 ==============================
 
-A simple Erlang job distribution daemon. This is completely non-durable and only exists to distribute the jobs to nodes that may reside on separate phsyical hosts.
+A simple Erlang job distribution daemon. This is completely non-durable and only exists to distribute the jobs to nodes that may reside on separate physical hosts.
 
 Basic Protocol
 --------------
 
-All communication is done by sending a 32bit integer in network byte order followed by that number of bytes that represent a JSON payload.
+All communication is done by sending a 32 bit integer in network byte order followed by that number of bytes that represent a JSON payload.
+
+Note on "body"
+--------------
+
+In all cases "body" can be any arbitrary JSON data.
 
 Slaves
 ------
 
-Connect a socket to your Gloom server on port 9999 and put a JSON message that looks like {"type": "join", "job_type": "echo"}. All jobs passing through the system have a type. A physical host can have as many clients serving as many different types as you want.
+All slave interaction is done via port 9999 on your Gloom server.
 
-Then wait for a job message to come to you. Job messages look like: {"type": "job", "id": "message_id", "body": ...some json...}. After doing whatever, send back a response that looks like {"type": "response", "body": ...some json...}.
+Joining the queue:
 
-And then wait for another job.
+    {"action": "join", "type": "echo"}
+	
+Response:
+
+	{"ok": true}
+
+Any host can connect as many clients as they wish. A single socket can only serve one type of job and only processes a single job at a time. If you want to process multiple jobs in parallel either run more processes or open multiple sockets.
+
+If for some reason you want to switch a socket's job type you can just resend a new join message.
+
+Job messages:
+
+    {"action": "job", "id": "message_id", "body": ...}
+
+Returning a response:
+
+    {"action": "respond", "body": ...}
+
+Response:
+
+	{"ok": "true"}
 
 To disconnect from the server, just close the socket. No special messaging required.
-
-Each socket connection is only allowed to process a single type of job. If you want you can resend a {"type": "join", ...} message to recast the type of jobs the client wants to consume.
 
 Master
 ------
 
-Connect a socket to your Gloom server on port 9998 and send messages of the form: {"type": "job", "job_type": "echo", "id": "message_id", "body": ...some json...}
+Master connections are done on port 9998
 
-The message_id field must be unique within the system. You can resubmit a job with the same id once you get a response, but it will cause an error to submit it again before this time.
+Submitting jobs:
 
-After being sent a slave will receive a message with the id and body and perform the necessary job tasks and then send the response back which is of the form {"id": "message_id", "body": ...json response...}.
+	{"action": "submit", "id": "message_id", "body": ... }
+	{"action": "submit", "id": "message_id", "priority": 5, "body": ...}
 
-No mas
-------
+Response:
 
-That is everything. Its simple and I haven't tested it that much. Don't expect it to get many new features. The only thing I have plans to look into is adding a couple extra commands to the master side to get info on currently running jobs.
+	{"ok": true}
+
+The message_id field must be unique within the system. You can resubmit a job with the same id once you get a response, but it will cause an error to submit it again before this time. It is recommended that you use hashes or UUIDs as job identifiers.
+
+The "priority" member must be an integer. Larger values indicate higher priority. The default priority is 0. In the case that two jobs have an equal priority they are ordered by the time of submission with older submissions taking precedence.
+
+Job response:
+
+    {"id": "message_id", "body": ... json ...}
+
+You are free to submit as many jobs as you want to the server. The order in which they are returned is not guaranteed to be the same order in which they were sent.
+
+Disconnection:
+
+You are free to disconnect a master at any point. Any jobs that this master submitted that are running will complete and have their response discarded. Any jobs that are still queued will be cleared from the queue.
+
+Python client
+-------------
+
+There's a reference python client in 'clients/python/' that can serve as a reference for anyone looking to write their own. Clients for other languages are welcome.

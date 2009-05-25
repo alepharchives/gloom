@@ -1,6 +1,6 @@
 import t
 
-@t.test()
+@t.both()
 def test_single_job(master, slave):
     master.submit(id="hi", type="foo", body="Here")
     slave.join("foo")

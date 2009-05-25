@@ -1,3 +1,4 @@
 *.pyc
 ebin/*
+clients/python/dist/
 clients/python/gloom.egg-info/
