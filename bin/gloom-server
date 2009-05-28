@@ -1,15 +1,2 @@
 #! /bin/sh
-
-SNAME=gloom
-DB_DIR=/tmp/gloom/mnesia
-
-# [ -f /etc/gloom.conf ] && . /etc/gloom.conf
-set -f
-exec erl \
-    -pa "./ebin" \
-    +K true \
-    -sname ${SNAME} \
-    -boot start_sasl \
-    -sasl errlog_type error \
-    -mnesia dir "\"${DB_DIR}\"" \
-    -s gloom
+exec erl +Bd -noinput -noshell -boot start_sasl -sasl errlog_type error -s gloom

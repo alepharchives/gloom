@@ -8,12 +8,12 @@ def test_header(slave):
 
 @t.slave()
 def test_invalid_json(slave):
-    slave.write("foo")
+    slave.send(''.join([struct.pack("!i", 3), "foo"]))
     t.raises(t.ServerError, slave.read)
 
 @t.slave()
 def test_invalid_messge(slave):
-    slave.send({"foo": "bar"})
+    slave.write({"foo": "bar"})
     t.raises(t.ServerError, slave.read)
 
 @t.slave()
@@ -31,5 +31,5 @@ def test_respond(slave):
 
 @t.slave()
 def test_submit_error(slave):
-    slave.send({"action": "submit", "id": "mesage"})
+    slave.write({"action": "submit", "id": "mesage"})
     t.raises(t.ServerError, slave.read)

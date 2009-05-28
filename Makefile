@@ -1,8 +1,8 @@
 
-SRC = src
-EBIN = ebin
-
-ERLC = $(shell which erlc)
+SRC=src
+EBIN=ebin
+VERSION=0.0.1
+LIBDIR=`erl -eval 'io:format("~s~n", [code:lib_dir()])' -s init stop -noshell`
 
 SOURCES = \
 	src/gloom.erl \
@@ -38,7 +38,14 @@ ${EBIN}/gloom.app: ${SRC}/gloom.app
 	cp $(SRC)/gloom.app $(EBIN)/gloom.app
 
 ${EBIN}/%.beam: ${SRC}/%.erl
-	$(ERLC) -W +debug -o ebin $<
+	erlc -W +debug -o ebin $<
+
+install: build
+	mkdir -p $(LIBDIR)/gloom-$(VERSION)/ebin
+	for i in $(EBIN)/*; \
+		do install $$i $(LIBDIR)/gloom-$(VERSION)/$$i; \
+	done
+	cp bin/gloom-server /usr/local/bin/
 
 test: build
 	prove -v t/*.t

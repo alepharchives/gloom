@@ -14,7 +14,6 @@
 }).
 
 init({Stream, Socket}) ->
-    ok = gloom:add_slave(nil),
     {ok, #state{stream=Stream, sock=Socket, processing=false}}.
 
 terminate(_Reason, State) ->

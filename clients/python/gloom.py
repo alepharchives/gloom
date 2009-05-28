@@ -31,22 +31,19 @@ class Job(dict):
     type = property(fget=lambda x: x.get("type"), doc="Job type.")
     body = property(fget=lambda x: x.get("body"), doc="Job body.")
 
-class Connection(object):
-    def __init__(self, ip, port):
-        self.sock = socket.socket()
-        self.sock.connect((ip, port))
+class Protocol(object):
+    def __init__(self, sock):
+        self.sock = sock
 
     def disconnect(self):
         self.sock.close()
 
-    def write(self, data):
+    def send(self, data, timeout=None):
+        self.sock.settimeout(timeout)
         packet = ''.join([struct.pack("!i", len(data)), data])
         self.sock.sendall(packet)
 
-    def send(self, data):
-        self.write(json.dumps(data))
-
-    def read(self, timeout=None):
+    def recv(self, timeout=None):
         self.sock.settimeout(timeout)
         length = self.sock.recv(4)
         if len(length) < 4:
@@ -54,55 +51,44 @@ class Connection(object):
         (length,) = struct.unpack("!i", length)
         data = self.sock.recv(length)
         if len(data) < length:
-            raise TransportError("Failed to read JSON payload.")
-        ret = json.loads(data)
+            raise TransportError("Failed to read payload.")
+        return data
+
+class Connection(Protocol):
+    def __init__(self, addr):
+        if isinstance(addr, tuple):
+            sock = socket.socket()
+            sock.connect(addr)
+            super(Connection, self).__init__(sock)
+        elif isinstance(addr, socket.socket):
+            super(Connection, self).__init__(addr)
+        elif isinstance(addr, Protocol):
+            super(Connection, self).__init__(addr.sock)
+        else:
+            mesg = "'%s' is not a tuple, socket, or gloom.Protocol object."
+            raise TypeError(mesg % addr.__class__.__name__)
+
+    def write(self, data, timeout=None):
+        self.send(json.dumps(data), timeout=timeout)
+
+    def read(self, timeout=None):
+        ret = json.loads(self.recv(timeout=timeout))
         if "error" in ret:
             raise ServerError(ret)
         return ret
 
-class Slave(Connection):
-    def __init__(self, ip="127.0.0.1", port=9999):
-        super(Slave, self).__init__(ip, port)
-
-    def __iter__(self):
-        return self
-
-    def next(self):
-        while True:
-            yield self.job()
-
-    def join(self, type):
-        self.send({"action": "join", "type": type})
-        ret = self.read()
-        if "ok" not in ret or ret["ok"] != True:
-            raise ProtocolError("Unexpected response: %r" % ret)
-        return True
-
-    def job(self, timeout=None):
-        ret = self.read(timeout=timeout)
-        for k in ["action", "id", "type", "body"]:
-            if k not in ret:
-                raise ProtocolError("Expected '%s' in job description." % k)
-        return Job(ret)
-
-    def respond(self, body=None):
-        self.send({"action": "respond", "body": body})
-        ret = self.read()
-        if "ok" not in ret or ret ["ok"] != True:
-            raise ProtocolError("Unexpected response: %r" % ret)
-        return True
-
 class Master(Connection):
-    def __init__(self, ip="127.0.0.1", port=9998):
-        super(Master, self).__init__(ip, port)
+    def __init__(self, addr=("127.0.0.1", 9998)):
+        super(Master, self).__init__(addr)
 
     def new_job_id(self):
         return uuid.uuid4().hex.upper()
 
-    def submit(self, id=None, type=None, body=None):
+    def submit(self, id=None, type=None, body=None, timeout=None):
         if id is None: id = self.new_job_id()
-        self.send({"action": "submit", "id": id, "type": type, "body": body})
-        ret = self.read()
+        data = {"action": "submit", "id": id, "type": type, "body": body}
+        self.write(data, timeout=timeout)
+        ret = self.read(timeout=timeout)
         if "ok" not in ret or ret["ok"] != True:
             raise ProtocolError("Unexpected response: %r" % ret)
         return id
@@ -120,3 +106,35 @@ class Master(Connection):
             job = self.receive(timeout=timeout)
             ids.remove(job.id)
             yield job
+
+class Slave(Connection):
+    def __init__(self, addr=("127.0.0.1", 9999)):
+        super(Slave, self).__init__(addr)
+
+    def __iter__(self):
+        return self
+
+    def next(self):
+        while True:
+            yield self.job()
+
+    def join(self, type, timeout=None):
+        self.write({"action": "join", "type": type}, timeout=timeout)
+        ret = self.read(timeout=timeout)
+        if "ok" not in ret or ret["ok"] != True:
+            raise ProtocolError("Unexpected response: %r" % ret)
+        return True
+
+    def job(self, timeout=None):
+        ret = self.read(timeout=timeout)
+        for k in ["action", "id", "type", "body"]:
+            if k not in ret:
+                raise ProtocolError("Expected '%s' in job description." % k)
+        return Job(ret)
+
+    def respond(self, body=None, timeout=None):
+        self.write({"action": "respond", "body": body}, timeout=timeout)
+        ret = self.read(timeout=timeout)
+        if "ok" not in ret or ret ["ok"] != True:
+            raise ProtocolError("Unexpected response: %r" % ret)
+        return True

@@ -8,12 +8,12 @@ def test_header(master):
 
 @t.master()
 def test_invalid_json(master):
-    master.write("foo")
+    master.send(''.join([struct.pack("!i", 3), "foo"]))
     t.raises(t.ServerError, master.read)
 
 @t.master()
 def test_invalid_messge(master):
-    master.send({"foo": "bar"})
+    master.write({"foo": "bar"})
     t.raises(t.ServerError, master.read)
 
 @t.master()
@@ -23,12 +23,12 @@ def test_submit(master):
 
 @t.master()
 def test_join_error(master):
-    master.send({"action": "join", "type": "foo"})
+    master.write({"action": "join", "type": "foo"})
     t.raises(t.ServerError, master.read)
 
 @t.master()
 def test_respond_error(master):
-    master.send({"action": "respond", "body": "bizzle"})
+    master.write({"action": "respond", "body": "bizzle"})
     t.raises(t.ServerError, master.read)
 
 
