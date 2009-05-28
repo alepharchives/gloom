@@ -13,7 +13,7 @@ init(_Args) ->
     {ok, MasterPort} = application:get_env(gloom, master_port),
     {ok, SlavePort} = application:get_env(gloom, slave_port),
     {ok, {
-        {one_for_one, 2, 60}, [
+        {one_for_one, 1, 1}, [
         {
             gloom,
             {gloom, start_link, []},

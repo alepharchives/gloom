@@ -41,6 +41,7 @@ rem_jobs() ->
     gen_server:cast(gloom, {master, rem_jobs, self()}).
 
 init(_) ->
+    info({gloom_app, initializing}),
     ets:new(slaves, [set, protected, named_table]),
     ets:new(jobs, [set, protected, named_table]),
     {ok, nil}.

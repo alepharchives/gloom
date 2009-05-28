@@ -46,6 +46,7 @@ send_error(Socket, {Error, Reason}) ->
 
 init({Module, Port}) ->
     process_flag(trap_exit, true),
+    gloom:info({starting_server, Module}),
     case (catch gen_tcp:listen(Port, ?PORT_OPTS)) of
         {ok, Socket} ->
             {ok, spawn_clients(#state{mod=Module, socket=Socket})};
@@ -77,9 +78,13 @@ handle_info({'EXIT', Pid, _}, State) ->
     {noreply, spawn_clients(State#state{clients=Curr})}.
 
 spawn_clients(#state{clients=Clients}=State) ->
-    New = lists:map(fun(_) ->
-        proc_lib:spawn_link(?MODULE, listen, [State#state{clients=[]}])
-    end, lists:seq(1, ?POOL-length(Clients))),
+    New = case ?POOL-length(Clients) of
+        Num when Num < 1 -> [];
+        Num ->
+            lists:map(fun(_) ->
+                proc_lib:spawn_link(?MODULE, listen, [State#state{clients=[]}])
+            end, lists:seq(1, Num))
+    end,
     State#state{clients=Clients ++ New}.
 
 listen(#state{mod=Module, socket=Socket}) ->

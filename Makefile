@@ -51,7 +51,7 @@ test: build
 	prove -v t/*.t
 
 clean:
-	rm $(EBIN)/*.beam $(EBIN)/*.app
+	rm $(EBIN)/*
 
 run: build
 	./bin/gloom-server

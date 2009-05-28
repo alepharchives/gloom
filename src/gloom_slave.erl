@@ -14,9 +14,11 @@
 }).
 
 init({Stream, Socket}) ->
+    gloom:info({slave_connected, self()}),
     {ok, #state{stream=Stream, sock=Socket, processing=false}}.
 
 terminate(_Reason, State) ->
+    gloom:info({slave_disconnected, self()}),
     gen_tcp:close(State#state.sock).
 
 handle_call(_Msg, _From, State) ->
